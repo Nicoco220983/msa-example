@@ -1,4 +1,4 @@
-export class HTMLMsaTestDbElement extends HTMLElement {
+export class HTMLMsaExampleElement extends HTMLElement {
 
 	connectedCallback(){
 		this.initContent()
@@ -29,7 +29,7 @@ export class HTMLMsaTestDbElement extends HTMLElement {
         const shdw = this.shadowRoot
         const _id = shdw.querySelector(".id").value
         const value = shdw.querySelector(".value").value
-		fetchJson(`/msa/test/db/${_id}`, {
+		fetchJson(`/msa/example/${_id}`, {
 			method: "POST",
             json: { value }
 		})
@@ -39,11 +39,11 @@ export class HTMLMsaTestDbElement extends HTMLElement {
 	async sync(){
         const shdw = this.shadowRoot
         const _id = shdw.querySelector(".id").value
-		const res = await fetchJson(`/msa/test/db/${_id}`)
-		shdw.querySelector(".value").value = res.data.value
+		const res = await fetchJson(`/msa/example/${_id}`)
+		shdw.querySelector(".value").value = res.value
 	}
 }
-customElements.define("msa-test-db", HTMLMsaTestDbElement)
+customElements.define("msa-example", HTMLMsaExampleElement)
 
 // utils
 
