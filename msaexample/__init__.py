@@ -1,1 +1,1 @@
-from .subapp import register_msa_subapp, install_msa_db
+from .subapp import msa_register_subapp, msa_install_db, msa_get_as_page

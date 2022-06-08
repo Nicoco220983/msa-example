@@ -8,10 +8,31 @@ import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.future import select
 
-import pydantic
+import pydantic as pyd
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
+
+
+# msa
+
+async def msa_register_subapp(app):
+    MsaExample().msa_register_subapp(app)
+
+async def msa_install_db(app):
+    async for db in app.get_db():
+        conn = await db.connection()
+        await conn.run_sync(Base.metadata.create_all)
+
+async def msa_get_as_page():
+    return {
+        "head": '<script type="module" src="/msa/example/static/msa-example.mjs"></script>',
+        "body": """<div  style="display: flex; flex-direction:column; width:100%; height:100%; padding:1em; margin:0; align-items:center;">
+            <h1>msaexample</h1>
+            <msa-example></msa-example>
+        </div>""",
+    }
+
 
 # database
 
@@ -23,53 +44,65 @@ class MyTable(Base):
     id = sa.Column(sa.String(80), primary_key=True)
     value = sa.Column(sa.Integer, nullable=False)
 
-async def install_msa_db(app):
-    async for db in app.get_db():
-        conn = await db.connection()
-        await conn.run_sync(Base.metadata.create_all)
 
 # subapp
+    
 
-async def register_msa_subapp(app):
+class DataModel(pyd.BaseModel):
+    id: str
+    value: int
 
-    subapp = FastAPI()
-    app.mount("/msa/example", subapp)
 
-    subapp.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class MsaExample():
 
-    @subapp.get("/")
-    def root_endp():
-        return FileResponse(os.path.join(HERE, "static/index.html"))
 
-    class DataModel(pydantic.BaseModel):
-        id: str
-        value: int
+    def msa_register_subapp(self, app):
 
-    @subapp.get("/{id}", response_model=DataModel)
-    async def get_endp(id: str, db = Depends(app.get_db)):
+        subapp = FastAPI()
+        app.mount("/msa/example", subapp)
+
+        subapp.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+        @subapp.get("/")
+        def root_endp():
+            return FileResponse(os.path.join(HERE, "static/index.html"))
+
+        @subapp.get("/{id}", response_model=DataModel)
+        async def get_endp(id: str, db = Depends(app.get_db)):
+            data = await self.get_data(db, id)
+            return self.export_data(data)
+
+        class PostDataReq(pyd.BaseModel):
+            value: int
+
+        @subapp.post("/{id}", response_model=DataModel)
+        async def post_endp(id: str, item: PostDataReq, db = Depends(app.get_db)):
+            data = await self.upsert_data(db, id, item.value)
+            return self.export_data(data)
+
+
+    async def get_data(self, db, id):
         rows = await db.execute(select(MyTable).filter_by(id=id))
         data = rows.scalars().first()
         if data is None:
             data = MyTable(id=id, value=0)
-        return _export_data(data)
+        return data
+
+
+    async def upsert_data(self, db, id, value):
+            rows = await db.execute(select(MyTable).filter_by(id=id).with_for_update())
+            data = rows.scalars().first()
+            if data is None:
+                data = MyTable(id=id, value=0)
+            data.value = value
+            db.add(data)
+            await db.commit()
+            await db.refresh(data)
+            return data
+
     
-    def _export_data(data):
-        return {
-            "id": data.id,
-            "value": data.value
-        }
-
-    class PostDataReq(pydantic.BaseModel):
-        value: int
-
-    @subapp.post("/{id}", response_model=DataModel)
-    async def post_endp(id: str, item: PostDataReq, db = Depends(app.get_db)):
-        rows = await db.execute(select(MyTable).filter_by(id=id).with_for_update())
-        data = rows.scalars().first()
-        if data is None:
-            data = MyTable(id=id, value=0)
-        data.value = item.value
-        db.add(data)
-        await db.commit()
-        await db.refresh(data)
-        return _export_data(data)
+    def export_data(self, data):
+        return DataModel(
+            id=data.id,
+            value=data.value,
+        )
